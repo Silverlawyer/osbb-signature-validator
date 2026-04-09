@@ -1,12 +1,10 @@
-// server.js — ФІНАЛЬНА ВЕРСІЯ: ВСІ ЗАПИТИ НА paperless.com.ua
+// server.js — Виправлений формат multipart (без зайвих заголовків)
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
 
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
-
-// 🎯 ВСІ API-запити на бойовий домен
 const API_BASE = "https://paperless.com.ua";
 
 app.use(express.raw({ type: 'application/pdf', limit: '10mb' }));
@@ -15,50 +13,51 @@ app.post('/upload-proxy', async (req, res) => {
   console.log("📥 [PROXY] Отримано PDF, розмір:", req.body.length);
   try {
     const pdfBuffer = req.body;
-    
-    // Отримуємо токен
     const token = await getAccessToken();
     const authCookie = `sessionId="Bearer ${token}, Id ${CLIENT_ID}"`;
 
-    // Точний boundary як у робочому curl
     const boundary = '41810675712638257'; 
     const crlf = "\r\n";
     
-    // Заголовок частини (100% як у curl)
+    // 🎯 Виправлено: без Content-Transfer-Encoding, тип application/pdf
     const header = `--${boundary}${crlf}` +
       `Content-Disposition: form-data; name="file"; filename="test.pdf"${crlf}` +
-      `Content-Type: application/octet-stream${crlf}` +
-      `Content-Transfer-Encoding: binary${crlf}${crlf}`;
+      `Content-Type: application/pdf${crlf}` +  // 🎯 Змінено на application/pdf
+      `${crlf}`;  // 🎯 Прибрано Content-Transfer-Encoding
     
     const footer = `${crlf}--${boundary}--${crlf}`;
     
-    // Збираємо тіло запиту
     const multipartBody = Buffer.concat([
       Buffer.from(header),
       pdfBuffer,
       Buffer.from(footer)
     ]);
 
-    console.log("📤 [PROXY] Відправка upload на", API_BASE + "/api2/checked/upload");
+    console.log("📤 [PROXY] Відправка upload...");
 
-    // Відправляємо запит на paperless.com.ua
     const response = await fetch(`${API_BASE}/api2/checked/upload`, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'User-Agent': 'curl/7.81.0', // Імітуємо curl
-        'Content-Type': `multipart/form-data; boundary=${boundary}; charset=UTF-8`,
-        'Content-Length': multipartBody.length.toString(), // ❗ Точний розмір
+        'User-Agent': 'curl/7.81.0',
+        // 🎯 Прибрано charset=UTF-8
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': multipartBody.length.toString(),
         'Cookie': authCookie
       },
       body: multipartBody
     });
 
     const result = await response.json();
-    console.log("✅ [PROXY] Upload статус:", response.status, "Відповідь:", JSON.stringify(result).substring(0, 300));
+    console.log("✅ [PROXY] Статус:", response.status, "Тіло:", JSON.stringify(result));
 
+    // 🎯 ПЕРЕВІРЯЄМО state В ТІЛІ, а не тільки HTTP статус
+    if (result.state === "err") {
+      throw new Error(`Paperless app error: ${result.code} - ${result.desc}`);
+    }
+    
     if (!response.ok) {
-      throw new Error(`Paperless Error: ${response.status} - ${JSON.stringify(result)}`);
+      throw new Error(`HTTP Error: ${response.status}`);
     }
     
     res.json({ success: true,  result });
@@ -74,64 +73,32 @@ async function getAccessToken() {
   
   const authResp = await fetch(`${baseUrl}/authorize`, {
     method: "POST",
-    headers: { 
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "application/json"
-    },
-    body: new URLSearchParams({ 
-      "response_type": "code", 
-      "agentCheck": "true", 
-      "client_id": CLIENT_ID 
-    })
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    body: new URLSearchParams({ "response_type": "code", "agentCheck": "true", "client_id": CLIENT_ID })
   });
   const authText = await authResp.text();
-  console.log("🔐 [AUTH] Статус:", authResp.status);
-  
   let code = null;
-  try { 
-    const json = JSON.parse(authText); 
-    code = json.code; 
-    console.log("🔑 Код з JSON");
-  } catch {
-    const m = authText.match(/<code>([^<]+)<\/code>/); 
-    if (m) { code = m[1]; console.log("🔑 Код з HTML"); }
+  try { code = JSON.parse(authText).code; } catch {
+    const m = authText.match(/<code>([^<]+)<\/code>/); if (m) code = m[1];
   }
-  if (!code) throw new Error("No auth code. Response: " + authText.substring(0, 200));
+  if (!code) throw new Error("No auth code");
 
-  console.log("🔐 [AUTH] Генерація dynamic secret...");
   const crypto = require('crypto');
   const input = CLIENT_ID + CLIENT_SECRET + code;
   const dynamicSecret = crypto.createHash('sha512').update(input).digest('hex');
 
-  console.log("🔐 [AUTH] Запит token...");
   const tokenResp = await fetch(`${baseUrl}/token`, {
     method: "POST",
-    headers: { 
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "application/json"
-    },
-    body: new URLSearchParams({ 
-      "grant_type": "authorization_code", 
-      "client_id": CLIENT_ID, 
-      "client_secret": dynamicSecret, 
-      "code": code 
-    })
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    body: new URLSearchParams({ "grant_type": "authorization_code", "client_id": CLIENT_ID, "client_secret": dynamicSecret, "code": code })
   });
   const tokenText = await tokenResp.text();
-  console.log("🔐 [AUTH] Token статус:", tokenResp.status);
-  
   let token = null;
-  try { 
-    token = JSON.parse(tokenText).access_token; 
-  } catch {
-    const m = tokenText.match(/<access_token>([^<]+)<\/access_token>/); 
-    if (m) token = m[1];
+  try { token = JSON.parse(tokenText).access_token; } catch {
+    const m = tokenText.match(/<access_token>([^<]+)<\/access_token>/); if (m) token = m[1];
   }
-  if (!token) throw new Error("No token. Response: " + tokenText.substring(0, 200));
-  
+  if (!token) throw new Error("No token");
   return token;
 }
 
-app.listen(port, () => { 
-  console.log(`🚀 [PROXY] Live on port ${port}, API: ${API_BASE}`); 
-});
+app.listen(port, () => { console.log(`🚀 [PROXY] Live, API: ${API_BASE}`); });
