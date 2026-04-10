@@ -1,9 +1,0 @@
-{
-  "name": "verify-signature",
-  "version": "1.0.0",
-  "type": "module",
-  "dependencies": {
-    "asn1js": "^3.0.0",
-    "pkijs": "^3.0.0"
-  }
-}
