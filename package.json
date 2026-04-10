@@ -1,11 +1,9 @@
 {
-  "name": "paperless-proxy",
+  "name": "verify-signature",
   "version": "1.0.0",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "type": "module",
   "dependencies": {
-    "express": "^4.18.2"
+    "asn1js": "^3.0.0",
+    "pkijs": "^3.0.0"
   }
 }
