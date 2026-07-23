@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Вхід до адмінпанелі — ОСББ Архів документів</title>
+<style>
+body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; padding: 0 16px; }
+label { display: block; margin-top: 16px; font-weight: bold; }
+input[type=password] { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+button { margin-top: 20px; padding: 10px 20px; cursor: pointer; }
+.flash { background: #fdecea; border: 1px solid #f5c2c0; padding: 10px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<h1>Вхід до адмінпанелі</h1>
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    {% for m in messages %}
+      <div class="flash">{{ m }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+<form method="post">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="password">Пароль адміністратора</label>
+  <input type="password" id="password" name="password" required autofocus>
+  <button type="submit">Увійти</button>
+</form>
+</body>
+</html>
