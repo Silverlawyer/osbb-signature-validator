@@ -4,22 +4,24 @@
 <meta charset="utf-8">
 <title>ОСББ Архів документів — Вхід</title>
 <style>
-  body { font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; color: #222; }
+  body { font-family: Arial, Helvetica, sans-serif; max-width: 680px; margin: 40px auto; padding: 0 20px; color: #222; }
   h1 { font-size: 22px; }
   .note { background: #fff8e1; border: 1px solid #ffe082; padding: 12px; border-radius: 6px; font-size: 14px; margin: 16px 0; }
+  .method { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .method h2 { font-size: 17px; margin-top: 0; }
   label { display: block; margin-top: 14px; font-weight: bold; }
-  input[type=file], input[type=password] { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
-  button { margin-top: 20px; padding: 10px 18px; font-size: 16px; cursor: pointer; }
+  button { margin-top: 16px; padding: 10px 18px; font-size: 16px; cursor: pointer; }
   .checkbox-row { margin-top: 16px; font-weight: normal; display: flex; align-items: flex-start; gap: 8px; }
+  #widget-holder { width: 100%; height: 420px; border: 1px solid #ddd; border-radius: 6px; margin-top: 10px; display: none; }
+  .status { font-size: 13px; margin-top: 8px; white-space: pre-wrap; }
+  .status.ok { color: #2e7d32; }
+  .status.bad { color: #c62828; }
+  a { color: #0b57d0; }
 </style>
 </head>
 <body>
 <h1>ОСББ Архів документів Дніпровського району</h1>
-<p>Для входу приєднайте файл вашого особистого ключа (КЕП) та введіть пароль до нього. Файл і пароль обробляються безпосередньо у вашому браузері — пароль ніколи не передається на наш сервер.</p>
-
-<div class="note">
-  Технічна примітка: клієнтська перевірка кваліфікованого підпису (безкоштовна бібліотека АТ «ІІТ») наразі підключається окремим кроком. Ця сторінка демонструє структуру та потік переходів сайту.
-</div>
+<p>Файл ключа (КЕП) та пароль до нього обробляються виключно у вашому браузері або локальним агентом на вашому комп'ютері — пароль ніколи не передається і не зберігається на нашому сервері.</p>
 
 {% with messages = get_flashed_messages() %}
   {% if messages %}
@@ -27,37 +29,105 @@
   {% endif %}
 {% endwith %}
 
-<form id="login-form">
-  <label for="keyfile">Файл ключа (.jks, .dat, .pfx, .zs2)</label>
-  <input type="file" id="keyfile" accept=".jks,.dat,.pfx,.zs2">
+<div class="checkbox-row">
+  <input type="checkbox" id="agree" required>
+  <label for="agree" style="font-weight:normal;margin:0;">Я погоджуюсь з <a href="{{ url_for('terms') }}" target="_blank">умовами оферти</a></label>
+</div>
 
-  <label for="keypass">Пароль до ключа</label>
-  <input type="password" id="keypass" autocomplete="off">
+<div class="method">
+  <h2>Вхід за допомогою КЕП</h2>
+  <p>Натисніть кнопку нижче — відкриється безкоштовний засіб підпису АТ «ІІТ». У ньому ви самі оберете файл ключа (.jks, .dat, .pfx, .zs2) та введете пароль, або оберете апаратний токен чи хмарний ключ, якщо у вас встановлено локального агента «ІІТ Користувач ЦСК» (безкоштовно завантажується з
+    <a href="https://iit.com.ua/downloads" target="_blank">iit.com.ua/downloads</a>). Встановлення додаткового ПЗ для звичайного файлу ключа не потрібне.</p>
+  <div id="widget-holder"></div>
+  <button id="btn-widget" type="button">Увійти за допомогою КЕП</button>
+  <div id="status-widget" class="status"></div>
+</div>
 
-  <div class="checkbox-row">
-    <input type="checkbox" id="agree" required>
-    <label for="agree" style="font-weight:normal;margin:0;">
-      Я погоджуюсь з <a href="{{ url_for('terms') }}" target="_blank">умовами оферти</a>
-    </label>
-  </div>
-
-  <button type="submit">Увійти за допомогою КЕП</button>
-</form>
+<div class="note">
+  Технічна примітка: сервер перевіряє готовий підпис через офіційну бібліотеку АТ «ІІТ», встановлену на цьому сервері, і не бачить ані файлу ключа, ані пароля.{% if not eusign_ready %} Зараз крипто-бібліотека на сервері недоступна ({{ eusign_error }}) — вхід тимчасово не працюватиме.{% endif %}
+</div>
 
 <script>
-document.getElementById('login-form').addEventListener('submit', function (e) {
-  e.preventDefault();
+function requireAgree() {
   if (!document.getElementById('agree').checked) {
     alert('Потрібно погодитися з умовами оферти.');
+    return false;
+  }
+  return true;
+}
+
+async function getChallenge() {
+  const r = await fetch("{{ url_for('auth_challenge') }}");
+  const data = await r.json();
+  return data.challenge;
+}
+
+async function sendSignature(signedDataBase64, statusEl) {
+  statusEl.className = 'status';
+  statusEl.textContent = 'Перевіряємо підпис на сервері...';
+  const r = await fetch("{{ url_for('auth_verify') }}", {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agree: true, signed_data: signedDataBase64 })
+  });
+  const data = await r.json();
+  if (data.ok) {
+    statusEl.textContent = 'Успішно! Переходимо у кабінет...';
+    statusEl.className = 'status ok';
+    window.location = data.redirect;
+  } else {
+    statusEl.textContent = data.message || 'Помилка входу.';
+    statusEl.className = 'status bad';
+  }
+}
+
+let widgetScriptLoaded = false;
+let widgetScriptFailed = false;
+(function loadWidgetScript() {
+  const s = document.createElement('script');
+  s.src = 'https://eu.iit.com.ua/sign-widget/v20200922/eusign.js';
+  s.onload = function () { widgetScriptLoaded = true; };
+  s.onerror = function () {
+    widgetScriptFailed = true;
+  };
+  document.head.appendChild(s);
+})();
+
+document.getElementById('btn-widget').addEventListener('click', async function () {
+  const statusEl = document.getElementById('status-widget');
+  if (!requireAgree()) return;
+  if (widgetScriptFailed || typeof EndUser === 'undefined') {
+    statusEl.className = 'status bad';
+    statusEl.textContent = 'Наразі засіб підпису АТ «ІІТ» не вдалося завантажити (сервіс тимчасово недоступний або потребує додаткового узгодження домену з АТ «ІІТ»). Спробуйте оновити сторінку пізніше або звернутися до адміністратора.';
     return;
   }
-  // ВАЖЛИВО: пароль (keypass) та файл ключа НІКОЛИ не входять у цей запит.
-  // Реальна клієнтська перевірка підпису буде підключена окремим кроком.
-  fetch("{{ url_for('login') }}", {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'agree=1'
-  }).then(function (r) { window.location = r.url; });
+  if (!widgetScriptLoaded) {
+    statusEl.className = 'status bad';
+    statusEl.textContent = 'Бібліотеку підпису ще завантажено не повністю. Зачекайте кілька секунд і спробуйте ще раз.';
+    return;
+  }
+  try {
+    const holder = document.getElementById('widget-holder');
+    holder.style.display = 'block';
+    const challenge = await getChallenge();
+    const euSign = new EndUser(
+      'widget-holder',
+      'sign-widget',
+      'https://eu.iit.com.ua/sign-widget/v20200922/',
+      EndUser.FormType.SignFile
+    );
+    statusEl.className = 'status';
+    statusEl.textContent = 'Оберіть ключ і підпишіть запит у вікні вище...';
+    euSign.SignData(challenge, false, false, function (signedData) {
+      sendSignature(signedData, statusEl);
+    }, function (err) {
+      statusEl.className = 'status bad';
+      statusEl.textContent = 'Помилка підпису: ' + err;
+    });
+  } catch (e) {
+    statusEl.className = 'status bad';
+    statusEl.textContent = 'Помилка запуску засобу підпису: ' + e;
+  }
 });
 </script>
 </body>
