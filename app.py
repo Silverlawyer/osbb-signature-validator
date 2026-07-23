@@ -1,10 +1,15 @@
 import os
 import json
 import uuid
+import base64
+import secrets
 import datetime
 from functools import wraps
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+
+import eusign_wrapper
+import logger as audit_db
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("KEP_SECRET_KEY", os.urandom(32))
@@ -13,21 +18,33 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DOCS_FILE = os.path.join(DATA_DIR, "documents.json")
-AUDIT_FILE = os.path.join(DATA_DIR, "audit_log.json")
 TERMS_FILE = os.path.join(BASE_DIR, "terms.txt")
 
 # ВАЖЛИВО (архітектурне рішення після перевірки документації АТ "ІІТ"):
 # Авторизація за КЕП виконується БЕЗ ОПЛАТИ будь-якого договору з АТ "ІІТ".
-# Файл ключа та пароль до нього читаються і обробляються ВИКЛЮЧНО в браузері
-# відвідувача (клієнтська JS-бібліотека підпису). Пароль НІКОЛИ не передається
-# і не зберігається на цьому сервері. Наступний крок - підключення реальної
-# клієнтської бібліотеки (безкоштовна "Java-скрипт-бібліотека підпису" АТ "ІІТ").
-# Поточна версія реалізує структуру сторінок та потік переходів.
-
+# Файл ключа та пароль до нього НІКОЛИ не потрапляють і не зберігаються на
+# цьому сервері. Відвідувач підписує одноразовий випадковий виклик (challenge)
+# безпосередньо у своєму браузері (безкоштовний Web-віджет АТ "ІІТ") або
+# локальним агентом "ІІТ Користувач ЦСК" (для апаратних токенів/хмарних
+# ключів), а сервер лише перевіряє готовий підпис через офіційну нативну
+# бібліотеку EUSignCP, встановлену на цьому сервері, і виймає з нього
+# ПІБ та РНОКПП/ЄДРПОУ підписувача.
+#
 # ТЕСТОВИЙ пароль адмінпанелі (для перевірки на етапі розробки).
 # ВАЖЛИВО: перед реальним використанням ОБОВ'ЯЗКОВО змінити цей пароль,
 # наприклад задавши змінну середовища ADMIN_PASSWORD на сервері.
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "777")
+
+# --- ініціалізація реальної крипто-бібліотеки АТ "ІІТ" на сервері ---
+EUSIGN_READY = False
+EUSIGN_INIT_ERROR = None
+try:
+    eusign_wrapper.initialize()
+    EUSIGN_READY = True
+except Exception as exc:  # noqa: BLE001
+    EUSIGN_INIT_ERROR = str(exc)
+
+audit_db.init_db()
 
 
 def load_json(path, default):
@@ -42,10 +59,19 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def log_audit(event: dict):
-    entries = load_json(AUDIT_FILE, [])
-    entries.append(event)
-    save_json(AUDIT_FILE, entries)
+def log_event(session_id, full_name, drfo_code, edrpou_code, action, path, file_name, result):
+    audit_db.log_event(
+        session_id=session_id,
+        full_name=full_name,
+        drfo_code=drfo_code,
+        edrpou_code=edrpou_code,
+        ip_address=request.remote_addr,
+        action=action,
+        path=path,
+        file_name=file_name,
+        user_agent=request.headers.get("User-Agent", ""),
+        result=result,
+    )
 
 
 def admin_required(view):
@@ -59,31 +85,74 @@ def admin_required(view):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", eusign_ready=EUSIGN_READY, eusign_error=EUSIGN_INIT_ERROR)
 
 
-@app.route("/login", methods=["POST"])
-def login():
-    agree = request.form.get("agree")
+@app.route("/auth/challenge")
+def auth_challenge():
+    challenge = secrets.token_hex(32)
+    session["kep_challenge"] = challenge
+    return jsonify({"challenge": challenge})
+
+
+@app.route("/auth/verify", methods=["POST"])
+def auth_verify():
+    data = request.get_json(silent=True) or {}
+    agree = bool(data.get("agree"))
+    signed_b64 = (data.get("signed_data") or "").strip()
+    challenge = session.get("kep_challenge")
+    session_id = str(uuid.uuid4())
+
     if not agree:
-        flash("Потрібно погодитися з умовами оферти.")
-        return redirect(url_for("index"))
+        log_event(session_id, None, None, None, "login", "/", None, "відмова: не погодився з офертою")
+        return jsonify({"ok": False, "message": "Потрібно погодитися з умовами оферти."}), 400
 
-    # ТИМЧАСОВО: реальна клієнтська перевірка підпису (euscp.js) ще підключається.
-    # Пароль ключа у цей запит НІКОЛИ не входить (перевірено на стороні шаблону).
-    now = datetime.datetime.utcnow().isoformat()
+    if not challenge:
+        return jsonify({"ok": False, "message": "Сесія входу прострочена. Оновіть сторінку і спробуйте ще раз."}), 400
+
+    if not EUSIGN_READY:
+        log_event(session_id, None, None, None, "login", "/", None,
+                   "відмова: крипто-бібліотеку не ініціалізовано (%s)" % EUSIGN_INIT_ERROR)
+        return jsonify({"ok": False, "message": "Крипто-бібліотеку не вдалося ініціалізувати на сервері. Повідомте адміністратора."}), 500
+
+    if not signed_b64:
+        return jsonify({"ok": False, "message": "Не отримано підписані дані від засобу підпису."}), 400
+
+    try:
+        signed_bytes = base64.b64decode(signed_b64)
+    except Exception:
+        return jsonify({"ok": False, "message": "Невірний формат підписаних даних."}), 400
+
+    try:
+        result = eusign_wrapper.verify_internal(signed_bytes)
+    except eusign_wrapper.EuSignError as exc:
+        log_event(session_id, None, None, None, "login", "/", None, "відмова: %s" % exc)
+        return jsonify({"ok": False, "message": "Підпис не пройшов перевірку: %s" % exc}), 400
+
+    full_name = result.get("full_name")
+    drfo_code = result.get("drfo_code")
+    edrpou_code = result.get("edrpou_code")
+    signed_content = result.get("data") or b""
+    try:
+        signed_text = signed_content.decode("utf-8")
+    except Exception:
+        signed_text = ""
+
+    if signed_text != challenge:
+        log_event(session_id, full_name, drfo_code, edrpou_code, "login", "/", None,
+                   "відмова: підпис не відповідає запиту (можлива повторна атака)")
+        return jsonify({"ok": False, "message": "Підпис не відповідає поточному запиту на вхід."}), 400
+
+    session.pop("kep_challenge", None)
     session["visitor"] = {
-        "full_name": "Тестовий відвідувач",
-        "logged_in_at": now,
+        "full_name": full_name or "Відвідувач",
+        "drfo_code": drfo_code,
+        "edrpou_code": edrpou_code,
+        "logged_in_at": datetime.datetime.utcnow().isoformat(),
+        "session_id": session_id,
     }
-    log_audit({
-        "event": "login_placeholder",
-        "time": now,
-        "path": "/dashboard",
-        "agree": True,
-        "note": "реальна перевірка КЕП ще не підключена",
-    })
-    return redirect(url_for("dashboard"))
+    log_event(session_id, full_name, drfo_code, edrpou_code, "login", "/dashboard", None, "успішно")
+    return jsonify({"ok": True, "redirect": url_for("dashboard")})
 
 
 @app.route("/logout", methods=["POST"])
@@ -137,7 +206,7 @@ def admin():
         save_json(DOCS_FILE, docs)
         return redirect(url_for("admin"))
     docs = load_json(DOCS_FILE, [])
-    return render_template("admin.html", docs=docs)
+    return render_template("admin.html", docs=docs, eusign_ready=EUSIGN_READY, eusign_error=EUSIGN_INIT_ERROR)
 
 
 @app.route("/admin/delete/<doc_id>", methods=["POST"])
@@ -152,8 +221,14 @@ def admin_delete(doc_id):
 @app.route("/admin/log")
 @admin_required
 def admin_log():
-    entries = load_json(AUDIT_FILE, [])
-    entries = list(reversed(entries))
+    rows = audit_db.fetch_recent(200)
+    entries = [
+        {
+            "ts": r[0], "full_name": r[1], "drfo_code": r[2], "ip_address": r[3],
+            "action": r[4], "path": r[5], "file_name": r[6], "result": r[7],
+        }
+        for r in rows
+    ]
     return render_template("admin_log.html", entries=entries)
 
 
