@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>OSBB Arkhiv</title>
+<style>
+body{font-family:Arial,sans-serif;max-width:640px;margin:60px auto;padding:0 20px;line-height:1.5;}
+h1{font-size:22px;}
+.box{border:1px solid #ccc;border-radius:8px;padding:24px;margin-top:20px;}
+label{display:block;margin:14px 0 6px;font-weight:bold;}
+input[type=file]{width:100%;}
+textarea{width:100%;box-sizing:border-box;}
+.agree{display:flex;align-items:flex-start;gap:8px;margin-top:18px;}
+.agree input{margin-top:4px;}
+button{margin-top:20px;padding:10px 22px;font-size:15px;cursor:pointer;}
+.note{color:#555;font-size:14px;margin-top:10px;}
+</style>
+</head>
+<body>
+<h1>ОСББ Архів документів Дніпровського району</h1>
+{% if visitor %}
+<div class="box">
+<p>Вітаємо, <strong>{{ visitor.full_name }}</strong>!</p>
+<p class="note">РНОКПП/ЄДРПОУ: {{ visitor.drfo_code or visitor.edrpou_code }}</p>
+<p>Ви успішно увійшли через КЕП. Каталог будинків та документів буде доданий на наступному етапі.</p>
+</div>
+{% else %}
+<div class="box">
+<p>Для доступу до документів необхідна автентифікація за допомогою кваліфікованого електронного підпису (КЕП).</p>
+<p class="note">Наразі підпис виконується у вашій власній програмі підпису (файловий ключ), а на сайт завантажується вже підписаний файл або base64-текст підпису.</p>
+<form method="post" action="/verify" enctype="multipart/form-data">
+<label for="signed_file">Файл підпису (вже підписані дані):</label>
+<input type="file" id="signed_file" name="signed_file">
+<label for="signed_data">...або вставте підпис у форматі base64:</label>
+<textarea id="signed_data" name="signed_data" rows="4" cols="60" placeholder="Base64"></textarea>
+<div class="agree">
+<input type="checkbox" id="agree" name="agree" value="1">
+<label for="agree" style="font-weight:normal;margin:0;">Я погоджуюсь з умовами <a href="/terms" target="_blank">Угоди про умови використання</a></label>
+</div>
+<button type="submit">Увійти</button>
+</form>
+</div>
+{% endif %}
+</body>
+</html>
