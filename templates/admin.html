@@ -14,6 +14,9 @@ th { background: #f0f0f0; }
 .topbar { display: flex; justify-content: space-between; align-items: center; }
 .topbar form { margin: 0; }
 .links { margin-top: 10px; }
+.eusign-status { font-size: 13px; padding: 8px 12px; border-radius: 6px; margin-top: 10px; }
+.eusign-status.ok { background: #e6f4ea; color: #2e7d32; }
+.eusign-status.bad { background: #fdecea; color: #c62828; }
 </style>
 </head>
 <body>
@@ -22,6 +25,9 @@ th { background: #f0f0f0; }
   <form method="post" action="{{ url_for('admin_logout') }}">
     <button type="submit">Вийти з адмінпанелі</button>
   </form>
+</div>
+<div class="eusign-status {{ 'ok' if eusign_ready else 'bad' }}">
+  Крипто-бібліотека АТ «ІІТ» на сервері: {{ 'працює' if eusign_ready else 'НЕ ІНІЦІАЛІЗОВАНА (' + (eusign_error or '') + ')' }}
 </div>
 <p>Тут вводяться дані про документи, які бачитимуть відвідувачі у своєму кабінеті. Реальні файли для завантаження буде підключено на наступному етапі.</p>
 <p class="links"><a href="{{ url_for('admin_log') }}">Переглянути лог заходів відвідувачів &rarr;</a></p>
