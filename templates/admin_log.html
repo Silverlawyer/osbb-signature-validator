@@ -4,33 +4,39 @@
 <meta charset="UTF-8">
 <title>Лог заходів відвідувачів — ОСББ Архів документів</title>
 <style>
-body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; }
+body { font-family: Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 0 16px; }
 table { border-collapse: collapse; width: 100%; margin-top: 16px; }
-th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 14px; }
+th, td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 13px; }
 th { background: #f0f0f0; }
 a.back { display: inline-block; margin-top: 20px; }
 .empty { color: #666; font-style: italic; }
+.result-ok { color: #2e7d32; font-weight: bold; }
+.result-bad { color: #c62828; }
 </style>
 </head>
 <body>
 <h1>Лог заходів відвідувачів</h1>
-<p>Тут відображаються всі спроби входу відвідувачів на сайт (час, подія, сторінка, чи погодились з офертою, примітка).</p>
+<p>Тут відображаються всі спроби входу відвідувачів на сайт: час, ПІБ та РНОКПП/ЄДРПОУ (за наявності), IP-адреса, подія, сторінка та результат перевірки підпису.</p>
 {% if entries %}
 <table>
 <tr>
 <th>Час (UTC)</th>
+<th>ПІБ</th>
+<th>РНОКПП/ЄДРПОУ</th>
+<th>IP-адреса</th>
 <th>Подія</th>
-<th>Сторінка входу</th>
-<th>Погодження з офертою</th>
-<th>Примітка</th>
+<th>Сторінка</th>
+<th>Результат</th>
 </tr>
 {% for e in entries %}
 <tr>
-<td>{{ e.time }}</td>
-<td>{{ e.event }}</td>
-<td>{{ e.path }}</td>
-<td>{{ "Так" if e.agree else "Ні" }}</td>
-<td>{{ e.note }}</td>
+<td>{{ e.ts }}</td>
+<td>{{ e.full_name or "—" }}</td>
+<td>{{ e.drfo_code or "—" }}</td>
+<td>{{ e.ip_address or "—" }}</td>
+<td>{{ e.action }}</td>
+<td>{{ e.path or "—" }}</td>
+<td class="{{ 'result-ok' if e.result == 'успішно' else 'result-bad' }}">{{ e.result }}</td>
 </tr>
 {% endfor %}
 </table>
