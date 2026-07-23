@@ -85,7 +85,7 @@ let widgetScriptLoaded = false;
 let widgetScriptFailed = false;
 (function loadWidgetScript() {
   const s = document.createElement('script');
-  s.src = 'https://eu.iit.com.ua/sign-widget/v20200922/eusign.js';
+  s.src = 'https://eu.iit.com.ua/sign-widget/eusign.js';
   s.onload = function () { widgetScriptLoaded = true; };
   s.onerror = function () {
     widgetScriptFailed = true;
@@ -113,7 +113,7 @@ document.getElementById('btn-widget').addEventListener('click', async function (
     const euSign = new EndUser(
       'widget-holder',
       'sign-widget',
-      'https://eu.iit.com.ua/sign-widget/v20200922/',
+      'https://eu.iit.com.ua/sign-widget/',
       EndUser.FormType.SignFile
     );
     statusEl.className = 'status';
