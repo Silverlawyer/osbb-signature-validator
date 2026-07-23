@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<title>Адмінпанель — документи</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; color: #222; }
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  td, th { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+  input, textarea { width: 100%; padding: 8px; box-sizing: border-box; margin-top: 4px; }
+  label { display: block; margin-top: 12px; font-weight: bold; }
+  button { margin-top: 16px; padding: 8px 16px; cursor: pointer; }
+  .del-btn { padding: 4px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Адмінпанель — керування переліком документів</h1>
+<p>Тут вводяться дані про документи, які бачитимуть відвідувачі у своєму кабінеті. Реальні файли для завантаження буде підключено на наступному етапі.</p>
+
+<form method="post">
+  <label for="category">Категорія</label>
+  <input type="text" id="category" name="category" required placeholder="напр. Статутні документи">
+
+  <label for="name">Назва документа</label>
+  <input type="text" id="name" name="name" required placeholder="напр. Статут ОСББ">
+
+  <label for="description">Опис (необов'язково)</label>
+  <textarea id="description" name="description" rows="2"></textarea>
+
+  <button type="submit">Додати</button>
+</form>
+
+<table>
+<tr><th>Категорія</th><th>Назва</th><th>Опис</th><th></th></tr>
+{% for d in docs %}
+<tr>
+  <td>{{ d.category }}</td>
+  <td>{{ d.name }}</td>
+  <td>{{ d.description }}</td>
+  <td>
+    <form method="post" action="{{ url_for('admin_delete', doc_id=d.id) }}" style="margin:0;">
+      <button type="submit" class="del-btn">Видалити</button>
+    </form>
+  </td>
+</tr>
+{% endfor %}
+</table>
+</body>
+</html>
