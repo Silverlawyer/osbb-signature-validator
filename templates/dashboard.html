@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<title>Кабінет відвідувача — ОСББ Архів документів</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #222; }
+  .category { margin-bottom: 28px; }
+  .category h2 { font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  .doc-btn { display: inline-block; margin: 6px 10px 6px 0; padding: 10px 14px; background: #eee; border: 1px solid #ccc; border-radius: 6px; color: #555; cursor: not-allowed; }
+  .empty { color: #777; font-style: italic; }
+</style>
+</head>
+<body>
+<p>Вітаємо, {{ visitor.full_name }}!</p>
+<h1>Документи ОСББ</h1>
+<p>Оберіть категорію та документ. Завантаження файлів буде підключено на наступному етапі — зараз тут лише перелік категорій.</p>
+
+{% if not categories %}
+  <p class="empty">Поки що жодного документа не додано адміністратором.</p>
+{% endif %}
+
+{% for category, docs in categories.items() %}
+<div class="category">
+  <h2>{{ category }}</h2>
+  {% for d in docs %}
+    <span class="doc-btn" title="{{ d.description }}">{{ d.name }}</span>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<form method="post" action="{{ url_for('logout') }}" style="margin-top:30px;">
+  <button type="submit">Вийти</button>
+</form>
+</body>
+</html>
