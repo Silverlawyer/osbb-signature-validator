@@ -55,3 +55,8 @@ terms.html вже задеплоєно на сервер (git clone + copy), sys
           - - Наявний зараз /opt/kep-server/eusign_wrapper.py коректно робить іншу, теж критично важливу річ: серверну перевірку вже готового підпису (verify_internal), включно з ПІБ і РНОКПП/ЄДРПОУ з сертифіката.
            
             - 
+
+
+## Onovlennya: index.html gotoviy, smoke-test proyshov
+
+templates/index.html perepysano cherez paste-event trick (obhid GitHub auto-close bahu) - normalna forma z fayl/base64 signed_data, checkbox agree, posylannya na /terms. Zadeployeno na server.
